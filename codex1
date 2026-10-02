@@ -41,6 +41,11 @@ Commands:
   screen reset                 Reset Android display density
   network check                Check internet, DNS, latency and Wi-Fi info
   network repair               Open safe Android network settings
+  update check                 Show Android version and security patch
+  update settings              Open official Android system update settings
+  security audit               Check ADB, app sources, screen lock and updates
+  scan files [path]            Scan accessible files with ClamAV (report only)
+  scan quarantine [path]       Move detected files to a reversible quarantine
   setup                        Install recommended Termux packages
   adb devices                  List authorized Android devices over ADB
   adb info                     Read basic device information (read-only)
@@ -52,12 +57,17 @@ Examples:
   codex1 screen info
   codex1 screen scale 110
   codex1 network check
+  codex1 update check
+  codex1 security audit
+  codex1 scan files ~/storage/downloads
   codex1 flash verify ~/storage/downloads/firmware.zip
 
 Notes:
   - Screen density changes usually require ADB, root, or Shizuku permissions.
   - Use only on a phone you own or are authorized to repair.
   - Codex1 does not bypass PIN, FRP, carrier locks, accounts, or security.
+  - Official Android updates are installed through Android Settings, not forced by Termux.
+  - Malware scanning is limited to files Termux can access; it cannot replace Android Play Protect.
 EOF
 }
 
@@ -132,10 +142,71 @@ network_repair() {
   fi
 }
 
+update_check() {
+  say "${CYAN}Android update information${RESET}"
+  if need_cmd getprop; then
+    printf '%-24s %s\n' "Model" "$(getprop ro.product.manufacturer) $(getprop ro.product.model)"
+    printf '%-24s %s\n' "Android version" "$(getprop ro.build.version.release)"
+    printf '%-24s %s\n' "Security patch" "$(getprop ro.build.version.security_patch)"
+    printf '%-24s %s\n' "Build" "$(getprop ro.build.display.id)"
+  else
+    warn "Android getprop is unavailable in this Termux session."
+  fi
+  say "Use Android Settings → System → Software update to check the newest official build."
+}
+
+update_settings() {
+  if need_cmd termux-open-settings; then
+    termux-open-settings android.settings.SYSTEM_UPDATE_SETTINGS >/dev/null 2>&1 || termux-open-settings >/dev/null 2>&1 || true
+    ok "Opened Android's official system update settings."
+  else
+    say "Open Settings → System → Software update, then download and install the official update."
+  fi
+  warn "Codex1 does not force-flash a firmware image: the correct package depends on your exact model, region, bootloader and manufacturer."
+}
+
+security_audit() {
+  say "${CYAN}Security audit${RESET}"
+  if need_cmd adb; then
+    local adb_state; adb_state="$(adb devices 2>/dev/null | awk 'NR==2 {print $2}')"
+    [ "$adb_state" = "device" ] && warn "USB debugging has an authorized ADB connection; disable it when not needed." || ok "No authorized USB-debugging device detected."
+  else
+    warn "ADB is not installed; USB debugging status could not be checked."
+  fi
+  if need_cmd getprop; then
+    local patch; patch="$(getprop ro.build.version.security_patch)"
+    printf 'Android security patch: %s\n' "${patch:-unknown}"
+    [ -n "$patch" ] && ok "Check this date against Settings → Security & privacy." || warn "Security patch date unavailable."
+  fi
+  if need_cmd termux-open-settings; then
+    say "Review manually: Play Protect, unknown app sources, screen lock, Google account devices, and Privacy dashboard."
+    termux-open-settings android.settings.SECURITY_SETTINGS >/dev/null 2>&1 || true
+  else
+    say "Open Android Settings → Security & privacy and review Play Protect and unknown app sources."
+  fi
+  warn "Termux cannot guarantee that nobody can hack a phone. Keep Android updated, use a strong lock, 2FA, Play Protect, and avoid unknown APKs."
+}
+
+scan_files() {
+  local mode="report" path="${1:-$HOME/storage/downloads}" quarantine="$HOME/.codex1/quarantine"
+  [ "${1:-}" = "--quarantine" ] && { mode="quarantine"; path="${2:-$HOME/storage/downloads}"; }
+  [ -d "$path" ] || { fail "Directory not found: $path. Run termux-setup-storage first if needed."; return 1; }
+  need_cmd clamscan || { fail "ClamAV is not installed. Run: pkg install clamav"; return 1; }
+  if [ "$mode" = "quarantine" ]; then
+    mkdir -p "$quarantine"
+    warn "Detected files will be moved (not deleted) to: $quarantine"
+    clamscan --infected --recursive --move="$quarantine" "$path"
+  else
+    info "Scanning accessible files (report only): $path"
+    clamscan --infected --recursive "$path"
+    say "No files were changed. Review any FOUND lines before taking action."
+  fi
+}
+
 setup() {
   need_cmd pkg || { fail "This command is for Termux. Install Termux from F-Droid or GitHub releases."; return 1; }
-  info "Installing recommended packages: curl, inetutils, dnsutils, android-tools"
-  pkg update -y && pkg install -y curl inetutils dnsutils android-tools && ok "Termux packages installed."
+  info "Installing recommended packages: curl, inetutils, dnsutils, android-tools, clamav"
+  pkg update -y && pkg install -y curl inetutils dnsutils android-tools clamav && ok "Termux packages installed."
 }
 
 adb_devices() {
@@ -199,6 +270,9 @@ main() {
     status) status ;;
     screen) case "${2:-info}" in info) screen_info ;; scale) [ "$#" -ge 3 ] && screen_scale "$3" || { fail "Usage: codex1 screen scale <80-140>"; exit 1; } ;; reset) screen_reset ;; *) usage; exit 1 ;; esac ;;
     network) case "${2:-check}" in check) network_check ;; repair) network_repair ;; *) usage; exit 1 ;; esac ;;
+    update) case "${2:-check}" in check) update_check ;; settings) update_settings ;; *) usage; exit 1 ;; esac ;;
+    security) case "${2:-audit}" in audit) security_audit ;; *) usage; exit 1 ;; esac ;;
+    scan) case "${2:-files}" in files) scan_files "${3:-$HOME/storage/downloads}" ;; quarantine) scan_files --quarantine "${3:-$HOME/storage/downloads}" ;; *) usage; exit 1 ;; esac ;;
     setup) setup ;;
     adb) case "${2:-devices}" in devices) adb_devices ;; info) adb_info ;; *) usage; exit 1 ;; esac ;;
     flash) case "${2:-guide}" in guide) flash_guide ;; verify) [ "$#" -ge 3 ] && flash_verify "$3" || { fail "Usage: codex1 flash verify <file>"; exit 1; } ;; *) usage; exit 1 ;; esac ;;

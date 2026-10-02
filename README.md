@@ -9,6 +9,9 @@ It provides a clear interface for:
 - Ubuntu/Debian ADB workstation setup guidance
 - Safe, read-only ADB command examples
 - Firmware maintenance preparation guidance
+- Official Android update checks and a shortcut to Android's system-update settings
+- Termux-accessible file scanning with ClamAV and reversible quarantine
+- Security audit reminders for USB debugging, Play Protect, unknown sources, updates, and account safety
 
 ## Install in Termux
 
@@ -33,6 +36,11 @@ codex1 screen scale 110
 codex1 screen reset
 codex1 network check
 codex1 network repair
+codex1 update check
+codex1 update settings
+codex1 security audit
+codex1 scan files ~/storage/downloads
+codex1 scan quarantine ~/storage/downloads
 codex1 setup
 codex1 adb devices
 codex1 adb info
@@ -40,11 +48,17 @@ codex1 flash guide
 codex1 flash verify ~/storage/downloads/firmware.zip
 ```
 
-The screen density commands may require ADB, root, or Shizuku permission. `network repair` opens Android network settings and avoids silently changing APN or private DNS values.
+The screen density commands may require ADB, root, or Shizuku permission. `network repair` opens Android network settings and avoids silently changing APN or private DNS values. `codex1 setup` installs ClamAV for file scanning.
+
+### Updates, malware, and account protection
+
+`codex1 update check` reads the phone model, Android version, build, and security-patch date. `codex1 update settings` opens the official Android update screen. Android system updates are intentionally installed by Android's own updater, not force-flashed by Termux: firmware packages are model/region-specific and a wrong image can brick or wipe a phone.
+
+`codex1 scan files <directory>` scans files visible to Termux and reports detections without changing anything. `codex1 scan quarantine <directory>` moves detected files to `~/.codex1/quarantine` instead of deleting them. This cannot scan protected Android app data or replace Play Protect. Keep Play Protect enabled, install apps only from trusted sources, use a strong screen lock and 2FA, review Google account devices, and disable USB debugging when not needed.
 
 ## Safety scope
 
-Codex1 is designed for phones owned by the user or devices they are explicitly authorized to repair. It does **not** bypass PINs, FRP, carrier locks, account security, or other access controls. It does not distribute firmware. For flashing, use the exact official image for the device model and region, back up first, and follow the manufacturer’s service instructions.
+Codex1 is designed for phones owned by the user or devices they are explicitly authorized to repair. It does **not** bypass PINs, FRP, carrier locks, account security, or other access controls, and it cannot guarantee that a phone will never be hacked. It does not distribute firmware. For flashing, use the exact official image for the device model and region, back up first, and follow the manufacturer’s service instructions.
 
 ## Run locally
 
