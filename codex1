@@ -44,8 +44,11 @@ Commands:
   update check                 Show Android version and security patch
   update settings              Open official Android system update settings
   security audit               Check ADB, app sources, screen lock and updates
+  security spyware             Audit visible services, accessibility and packages
   scan files [path]            Scan accessible files with ClamAV (report only)
   scan quarantine [path]       Move detected files to a reversible quarantine
+  scan auto-quarantine [path]  Automatically quarantine detected accessible files
+  network monitor [seconds]    Watch visible connections for new entries
   backup create [file]         Back up accessible phone files to a compressed archive
   backup list <file>           List files inside a Codex1 backup
   backup restore <file>        Restore a backup after confirmation
@@ -68,7 +71,10 @@ Examples:
   codex1 network check
   codex1 update check
   codex1 security audit
+  codex1 security spyware
   codex1 scan files ~/storage/downloads
+  codex1 scan auto-quarantine ~/storage/downloads
+  codex1 network monitor 60
   codex1 backup create ~/codex1-backup.tar.gz
   codex1 caller country +255712345678
   codex1 voice apply robot input.wav output.wav
@@ -157,6 +163,37 @@ network_repair() {
   fi
 }
 
+network_snapshot() {
+  if need_cmd ss; then
+    ss -H -tunap 2>/dev/null || ss -H -tuna 2>/dev/null
+  elif need_cmd netstat; then
+    netstat -tun 2>/dev/null
+  else
+    return 1
+  fi
+}
+
+network_monitor() {
+  local duration="${1:-60}" interval=2 elapsed=0 snapshot previous
+  case "$duration" in ''|*[!0-9]*) fail "Duration must be a number of seconds."; return 1 ;; esac
+  [ "$duration" -ge 5 ] && [ "$duration" -le 3600 ] || { fail "Duration must be between 5 and 3600 seconds."; return 1; }
+  network_snapshot >/dev/null 2>&1 || { fail "Install iproute2 or net-tools first: pkg install iproute2"; return 1; }
+  snapshot="$(mktemp)"; previous="$(mktemp)"
+  trap 'rm -f "$snapshot" "$previous"' INT TERM EXIT
+  network_snapshot | sort -u > "$previous"
+  info "Monitoring visible connections for ${duration}s. Press Ctrl-C to stop."
+  while [ "$elapsed" -lt "$duration" ]; do
+    sleep "$interval"
+    network_snapshot | sort -u > "$snapshot"
+    diff -u "$previous" "$snapshot" | sed -n '/^+/!d;/^+++/d;s/^+//' | while IFS= read -r line; do [ -n "$line" ] && say "${YELLOW}[new]${RESET} $line"; done
+    cp "$snapshot" "$previous"
+    elapsed=$((elapsed + interval))
+  done
+  trap - INT TERM EXIT
+  rm -f "$snapshot" "$previous"
+  ok "Network monitor finished."
+}
+
 update_check() {
   say "${CYAN}Android update information${RESET}"
   if need_cmd getprop; then
@@ -200,6 +237,27 @@ security_audit() {
     say "Open Android Settings → Security & privacy and review Play Protect and unknown app sources."
   fi
   warn "Termux cannot guarantee that nobody can hack a phone. Keep Android updated, use a strong lock, 2FA, Play Protect, and avoid unknown APKs."
+}
+
+security_spyware() {
+  say "${CYAN}Spyware exposure audit${RESET}"
+  if need_cmd pm; then
+    say "Third-party packages visible to Termux (review unfamiliar names):"
+    pm list packages -3 2>/dev/null | sed -n '1,120p' || warn "Package listing was denied."
+  else
+    warn "Android package manager is not exposed to this Termux session."
+  fi
+  if need_cmd settings; then
+    local accessibility device_admin
+    accessibility="$(settings get secure enabled_accessibility_services 2>/dev/null || true)"
+    device_admin="$(settings get secure enabled_device_admins 2>/dev/null || true)"
+    [ -n "$accessibility" ] && warn "Accessibility service(s) enabled: $accessibility" || ok "No accessibility service was reported to Termux."
+    [ -n "$device_admin" ] && warn "Device-admin entry reported: $device_admin" || ok "No device-admin entry was reported to Termux."
+  else
+    warn "Android secure settings are not accessible; review Accessibility and Device admin manually."
+  fi
+  say "Review manually: Settings → Privacy → Permission manager, Accessibility, Device admin apps, VPN, and Play Protect."
+  warn "This is an exposure audit, not proof that spyware is absent. Protected app data and kernel-level activity require Android security tools or an authorized service center."
 }
 
 scan_files() {
@@ -328,8 +386,8 @@ camera_zoom() {
 
 setup() {
   need_cmd pkg || { fail "This command is for Termux. Install Termux from F-Droid or GitHub releases."; return 1; }
-  info "Installing recommended packages: curl, inetutils, dnsutils, android-tools, clamav, ffmpeg, imagemagick, termux-api"
-  pkg update -y && pkg install -y curl inetutils dnsutils android-tools clamav ffmpeg imagemagick termux-api && ok "Termux packages installed."
+  info "Installing recommended packages: curl, inetutils, dnsutils, iproute2, android-tools, clamav, ffmpeg, imagemagick, termux-api"
+  pkg update -y && pkg install -y curl inetutils dnsutils iproute2 android-tools clamav ffmpeg imagemagick termux-api && ok "Termux packages installed."
 }
 
 adb_devices() {
@@ -392,10 +450,10 @@ main() {
     version|-v|--version) say "Codex1 ${VERSION} · by MrCodex1Tz · Facebook: MrCodex1Tz" ;;
     status) status ;;
     screen) case "${2:-info}" in info) screen_info ;; scale) [ "$#" -ge 3 ] && screen_scale "$3" || { fail "Usage: codex1 screen scale <80-140>"; exit 1; } ;; reset) screen_reset ;; *) usage; exit 1 ;; esac ;;
-    network) case "${2:-check}" in check) network_check ;; repair) network_repair ;; *) usage; exit 1 ;; esac ;;
+    network) case "${2:-check}" in check) network_check ;; repair) network_repair ;; monitor) network_monitor "${3:-60}" ;; *) usage; exit 1 ;; esac ;;
     update) case "${2:-check}" in check) update_check ;; settings) update_settings ;; *) usage; exit 1 ;; esac ;;
-    security) case "${2:-audit}" in audit) security_audit ;; *) usage; exit 1 ;; esac ;;
-    scan) case "${2:-files}" in files) scan_files "${3:-$HOME/storage/downloads}" ;; quarantine) scan_files --quarantine "${3:-$HOME/storage/downloads}" ;; *) usage; exit 1 ;; esac ;;
+    security) case "${2:-audit}" in audit) security_audit ;; spyware) security_spyware ;; *) usage; exit 1 ;; esac ;;
+    scan) case "${2:-files}" in files) scan_files "${3:-$HOME/storage/downloads}" ;; quarantine|auto-quarantine) scan_files --quarantine "${3:-$HOME/storage/downloads}" ;; *) usage; exit 1 ;; esac ;;
     backup) case "${2:-create}" in create) backup_create "${3:-$HOME/codex1-backup-$(date +%Y%m%d-%H%M%S).tar.gz}" ;; list) [ "$#" -ge 3 ] && backup_list "$3" || { fail "Usage: codex1 backup list <file>"; exit 1; } ;; restore) [ "$#" -ge 3 ] && backup_restore "$3" "${4:-$HOME/storage/shared}" || { fail "Usage: codex1 backup restore <file> [target]"; exit 1; } ;; *) usage; exit 1 ;; esac ;;
     caller) [ "${2:-}" = "country" ] && [ "$#" -ge 3 ] && caller_country "$3" || { fail "Usage: codex1 caller country <number>"; exit 1; } ;;
     voice) case "${2:-effects}" in effects) voice_effects ;; apply) [ "$#" -ge 5 ] && voice_apply "$3" "$4" "$5" || { fail "Usage: codex1 voice apply <effect> <input> <output>"; exit 1; } ;; *) usage; exit 1 ;; esac ;;

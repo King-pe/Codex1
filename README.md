@@ -43,8 +43,11 @@ codex1 network repair
 codex1 update check
 codex1 update settings
 codex1 security audit
+codex1 security spyware
 codex1 scan files ~/storage/downloads
 codex1 scan quarantine ~/storage/downloads
+codex1 scan auto-quarantine ~/storage/downloads
+codex1 network monitor 60
 codex1 backup create ~/codex1-backup.tar.gz
 codex1 backup list ~/codex1-backup.tar.gz
 codex1 backup restore ~/codex1-backup.tar.gz
@@ -68,6 +71,12 @@ The screen density commands may require ADB, root, or Shizuku permission. `netwo
 `codex1 update check` reads the phone model, Android version, build, and security-patch date. `codex1 update settings` opens the official Android update screen. Android system updates are intentionally installed by Android's own updater, not force-flashed by Termux: firmware packages are model/region-specific and a wrong image can brick or wipe a phone.
 
 `codex1 scan files <directory>` scans files visible to Termux and reports detections without changing anything. `codex1 scan quarantine <directory>` moves detected files to `~/.codex1/quarantine` instead of deleting them. This cannot scan protected Android app data or replace Play Protect. Keep Play Protect enabled, install apps only from trusted sources, use a strong screen lock and 2FA, review Google account devices, and disable USB debugging when not needed.
+
+`codex1 scan auto-quarantine <directory>` runs the same ClamAV scan and automatically moves detected accessible files into the reversible `~/.codex1/quarantine` folder. It does not delete files or remove apps, and it cannot scan Android's protected app data.
+
+`codex1 security spyware` audits third-party packages visible to Termux, enabled Accessibility services, device-admin entries, and security settings. It is an exposure audit, not proof that spyware is absent; review suspicious apps in Android Settings and use Play Protect or an authorized service center for protected system analysis.
+
+`codex1 network monitor 60` watches connection entries visible to Termux for 60 seconds and prints new entries. Use `Ctrl-C` to stop. Without root, Android may hide process names and protected app traffic; this is not a packet sniffer or guarantee that every attempted connection is visible. For fuller visibility, review Android Privacy Dashboard, VPN settings, router logs, and use a reputable firewall/VPN with user consent.
 
 ### Backup and restore
 
