@@ -16,6 +16,8 @@ It provides a clear interface for:
 - Offline country lookup from a caller's international dialing prefix
 - Offline voice effects for audio files
 - Termux camera capture, Codex1 watermarking, and digital zoom/crop for images
+- Password-protected AES-256 encrypted vaults for accessible files and folders
+- Offline scam-link heuristics, local URL cleaning, and a Codex1 blocklist
 
 ## Install in Termux
 
@@ -57,6 +59,14 @@ codex1 voice apply robot input.wav output.wav
 codex1 camera capture ~/storage/pictures/codex1.jpg
 codex1 camera watermark input.jpg output.jpg
 codex1 camera zoom input.jpg output.jpg 300
+codex1 vault create ~/storage/shared/Documents ~/codex1-vault.enc
+codex1 vault restore ~/codex1-vault.enc ~/storage/shared
+codex1 vault encrypt secret.txt secret.txt.enc
+codex1 vault decrypt secret.txt.enc secret-restored.txt
+codex1 url check https://example.com/login
+codex1 url clean 'https://example.com/?utm_source=unknown'
+codex1 url block https://bad.example
+codex1 url blocked
 codex1 setup
 codex1 adb devices
 codex1 adb info
@@ -77,6 +87,14 @@ The screen density commands may require ADB, root, or Shizuku permission. `netwo
 `codex1 security spyware` audits third-party packages visible to Termux, enabled Accessibility services, device-admin entries, and security settings. It is an exposure audit, not proof that spyware is absent; review suspicious apps in Android Settings and use Play Protect or an authorized service center for protected system analysis.
 
 `codex1 network monitor 60` watches connection entries visible to Termux for 60 seconds and prints new entries. Use `Ctrl-C` to stop. Without root, Android may hide process names and protected app traffic; this is not a packet sniffer or guarantee that every attempted connection is visible. For fuller visibility, review Android Privacy Dashboard, VPN settings, router logs, and use a reputable firewall/VPN with user consent.
+
+### Encryption vault
+
+`codex1 vault create <directory> <encrypted-file>` creates a compressed AES-256-CBC vault using a password that is typed interactively. `codex1 vault restore <encrypted-file> <directory>` decrypts it and requires typing `RESTORE` before extraction. Individual files can use `vault encrypt` and `vault decrypt`. Use a long password and keep a second backup: Codex1 cannot recover a forgotten password. Encryption protects the selected files; it does not encrypt Android system data, running app memory, or files outside the selected directory.
+
+### Scam and dangerous links
+
+`codex1 url check <url>` checks for common indicators such as plain HTTP, raw IP addresses, punycode, username-like URLs, shorteners, suspicious keywords, and the local blocklist. `codex1 url clean <url>` removes the query string locally, while `url block <url>` records an exact URL in `~/.codex1/blocked_urls`. These are warnings and local records, not a live web reputation service. System-wide automatic blocking requires Android VPN/firewall permissions or root; Codex1 will not silently install or control those.
 
 ### Backup and restore
 

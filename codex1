@@ -58,6 +58,14 @@ Commands:
   camera capture <file>        Capture a photo with Termux:API
   camera watermark <in> <out> Add a Codex1 watermark to an image
   camera zoom <in> <out> <%>   Digital zoom/crop an image (100-800)
+  vault create <dir> <file>   Encrypt a directory backup with AES-256
+  vault restore <file> <dir>  Decrypt and restore an encrypted vault
+  vault encrypt <in> <out>    Encrypt one file with a password
+  vault decrypt <in> <out>    Decrypt one file with a password
+  url check <url>              Check a link for common scam indicators
+  url clean <url>              Remove the URL query string locally
+  url block <url>              Add a URL to Codex1's local blocklist
+  url blocked                  Show the local blocked-link list
   setup                        Install recommended Termux packages
   adb devices                  List authorized Android devices over ADB
   adb info                     Read basic device information (read-only)
@@ -81,6 +89,9 @@ Examples:
   codex1 camera capture ~/storage/pictures/codex1.jpg
   codex1 camera watermark input.jpg output.jpg
   codex1 camera zoom input.jpg output.jpg 300
+  codex1 vault create ~/storage/shared/Documents ~/codex1-vault.enc
+  codex1 url check https://example.com/login
+  codex1 url block https://bad.example
   codex1 flash verify ~/storage/downloads/firmware.zip
 
 Notes:
@@ -384,6 +395,82 @@ camera_zoom() {
   warn "This is digital zoom: it crops pixels and cannot create detail that the camera did not capture."
 }
 
+vault_encrypt() {
+  local input="$1" output="$2"
+  [ -f "$input" ] || { fail "Input file not found: $input"; return 1; }
+  need_cmd openssl || { fail "OpenSSL is unavailable. Run: pkg install openssl"; return 1; }
+  warn "Use a long password and store it safely; Codex1 cannot recover a forgotten password."
+  openssl enc -aes-256-cbc -salt -pbkdf2 -iter 200000 -in "$input" -out "$output" && ok "Encrypted file created: $output"
+}
+
+vault_decrypt() {
+  local input="$1" output="$2"
+  [ -f "$input" ] || { fail "Encrypted file not found: $input"; return 1; }
+  need_cmd openssl || { fail "OpenSSL is unavailable. Run: pkg install openssl"; return 1; }
+  openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -in "$input" -out "$output" && ok "Decrypted file created: $output" || { fail "Wrong password or damaged encrypted file."; return 1; }
+}
+
+vault_create() {
+  local input="$1" output="$2" parent name temp
+  [ -d "$input" ] || { fail "Directory not found: $input"; return 1; }
+  need_cmd openssl || { fail "OpenSSL is unavailable. Run: pkg install openssl"; return 1; }
+  parent="$(dirname "$input")"; name="$(basename "$input")"; temp="$(mktemp --suffix=.tar.gz)"
+  tar -czf "$temp" -C "$parent" "$name" || { rm -f "$temp"; fail "Could not create archive."; return 1; }
+  vault_encrypt "$temp" "$output"; local result=$?; rm -f "$temp"; return "$result"
+}
+
+vault_restore() {
+  local input="$1" target="$2" temp
+  [ -f "$input" ] || { fail "Encrypted vault not found: $input"; return 1; }
+  [ -d "$target" ] || { fail "Restore directory not found: $target"; return 1; }
+  temp="$(mktemp --suffix=.tar.gz)"
+  vault_decrypt "$input" "$temp" || { rm -f "$temp"; return 1; }
+  if tar -tzf "$temp" | grep -E '(^/|(^|/)\.\.(\/|$))' >/dev/null 2>&1; then
+    rm -f "$temp"; fail "Vault contains an unsafe path and was not restored."; return 1
+  fi
+  warn "Restoring may overwrite files with matching names in: $target"
+  printf 'Type RESTORE to continue: '; read -r confirmation
+  if [ "$confirmation" = "RESTORE" ]; then tar -xzf "$temp" -C "$target" && ok "Vault restored to: $target"; else warn "Restore cancelled."; fi
+  rm -f "$temp"
+}
+
+url_block_file() { printf '%s/.codex1/blocked_urls' "$HOME"; }
+
+url_check() {
+  local url="$1" host flags=() blockfile
+  case "$url" in http://*|https://*) ;; *) fail "Use a complete URL starting with http:// or https://"; return 1 ;; esac
+  host="$(printf '%s' "$url" | sed -E 's#^[a-zA-Z]+://([^/@]+@)?([^/:?#]+).*#\2#')"
+  [[ "$url" == http://* ]] && flags+=("not HTTPS")
+  [[ "$host" == xn--* || "$host" == *.*.xn--* ]] && flags+=("punycode domain")
+  [[ "$host" =~ ^[0-9.]+$ ]] && flags+=("raw IP address")
+  [[ "$url" == *'@'* ]] && flags+=("username-like URL")
+  [[ "$host" == *"bit.ly"* || "$host" == *"tinyurl.com"* || "$host" == *"t.co"* || "$host" == *"is.gd"* ]] && flags+=("shortened link")
+  [[ "$url" =~ [Ll]ogin|[Vv]erify|[Pp]assword|[Ww]allet|[Pp]ayment|[Ff]ree-[Mm]oney|[Uu]rgent ]] && flags+=("social-engineering keywords")
+  blockfile="$(url_block_file)"
+  if [ -f "$blockfile" ] && grep -Fxq "$url" "$blockfile"; then flags+=("Codex1 blocklist") ; fi
+  say "Host: $host"
+  if [ "${#flags[@]}" -eq 0 ]; then ok "No common scam indicators found (not a guarantee of safety)."; else warn "Risk indicators: ${flags[*]}"; fi
+  say "Do not enter passwords, OTPs, card details, or recovery codes unless you independently verified the website."
+}
+
+url_clean() {
+  local url="$1"
+  printf '%s\n' "${url%%\?*}"
+  warn "All query parameters were removed; review the cleaned URL before opening it."
+}
+
+url_block() {
+  local url="$1" file; file="$(url_block_file)"
+  mkdir -p "$(dirname "$file")"
+  grep -Fxq "$url" "$file" 2>/dev/null || printf '%s\n' "$url" >> "$file"
+  ok "Added to local Codex1 blocklist: $url"
+}
+
+url_blocked() {
+  local file; file="$(url_block_file)"
+  [ -f "$file" ] && cat "$file" || say "Codex1 blocklist is empty."
+}
+
 setup() {
   need_cmd pkg || { fail "This command is for Termux. Install Termux from F-Droid or GitHub releases."; return 1; }
   info "Installing recommended packages: curl, inetutils, dnsutils, iproute2, android-tools, clamav, ffmpeg, imagemagick, termux-api"
@@ -458,6 +545,8 @@ main() {
     caller) [ "${2:-}" = "country" ] && [ "$#" -ge 3 ] && caller_country "$3" || { fail "Usage: codex1 caller country <number>"; exit 1; } ;;
     voice) case "${2:-effects}" in effects) voice_effects ;; apply) [ "$#" -ge 5 ] && voice_apply "$3" "$4" "$5" || { fail "Usage: codex1 voice apply <effect> <input> <output>"; exit 1; } ;; *) usage; exit 1 ;; esac ;;
     camera) case "${2:-capture}" in capture) [ "$#" -ge 3 ] && camera_capture "$3" || { fail "Usage: codex1 camera capture <file>"; exit 1; } ;; watermark) [ "$#" -ge 4 ] && camera_watermark "$3" "$4" || { fail "Usage: codex1 camera watermark <input> <output>"; exit 1; } ;; zoom) [ "$#" -ge 5 ] && camera_zoom "$3" "$4" "$5" || { fail "Usage: codex1 camera zoom <input> <output> <100-800>"; exit 1; } ;; *) usage; exit 1 ;; esac ;;
+    vault) case "${2:-create}" in create) [ "$#" -ge 4 ] && vault_create "$3" "$4" || { fail "Usage: codex1 vault create <directory> <encrypted-file>"; exit 1; } ;; restore) [ "$#" -ge 4 ] && vault_restore "$3" "$4" || { fail "Usage: codex1 vault restore <encrypted-file> <directory>"; exit 1; } ;; encrypt) [ "$#" -ge 4 ] && vault_encrypt "$3" "$4" || { fail "Usage: codex1 vault encrypt <input> <output>"; exit 1; } ;; decrypt) [ "$#" -ge 4 ] && vault_decrypt "$3" "$4" || { fail "Usage: codex1 vault decrypt <input> <output>"; exit 1; } ;; *) usage; exit 1 ;; esac ;;
+    url) case "${2:-check}" in check) [ "$#" -ge 3 ] && url_check "$3" || { fail "Usage: codex1 url check <url>"; exit 1; } ;; clean) [ "$#" -ge 3 ] && url_clean "$3" || { fail "Usage: codex1 url clean <url>"; exit 1; } ;; block) [ "$#" -ge 3 ] && url_block "$3" || { fail "Usage: codex1 url block <url>"; exit 1; } ;; blocked) url_blocked ;; *) usage; exit 1 ;; esac ;;
     setup) setup ;;
     adb) case "${2:-devices}" in devices) adb_devices ;; info) adb_info ;; *) usage; exit 1 ;; esac ;;
     flash) case "${2:-guide}" in guide) flash_guide ;; verify) [ "$#" -ge 3 ] && flash_verify "$3" || { fail "Usage: codex1 flash verify <file>"; exit 1; } ;; *) usage; exit 1 ;; esac ;;
