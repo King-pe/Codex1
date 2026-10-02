@@ -74,7 +74,7 @@ codex1 flash guide
 codex1 flash verify ~/storage/downloads/firmware.zip
 ```
 
-The screen density commands may require ADB, root, or Shizuku permission. `network repair` opens Android network settings and avoids silently changing APN or private DNS values. `codex1 setup` installs ClamAV for file scanning.
+The screen density commands may require ADB, root, or Shizuku permission. `network repair` opens Android network settings and avoids silently changing APN or private DNS values. `codex1 setup` installs ClamAV, OpenSSL, iproute2, FFmpeg, ImageMagick, and Termux:API dependencies. In examples, replace `<input>`, `<output>`, and `input.wav` with real file paths; do not type the angle brackets.
 
 ### Updates, malware, and account protection
 

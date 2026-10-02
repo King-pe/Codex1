@@ -262,8 +262,14 @@ security_spyware() {
     local accessibility device_admin
     accessibility="$(settings get secure enabled_accessibility_services 2>/dev/null || true)"
     device_admin="$(settings get secure enabled_device_admins 2>/dev/null || true)"
-    [ -n "$accessibility" ] && warn "Accessibility service(s) enabled: $accessibility" || ok "No accessibility service was reported to Termux."
-    [ -n "$device_admin" ] && warn "Device-admin entry reported: $device_admin" || ok "No device-admin entry was reported to Termux."
+    case "$accessibility" in
+      ""|null|cmd:\ Failure*) warn "Accessibility status is unavailable in this Termux session." ;;
+      *) warn "Accessibility service(s) enabled: $accessibility" ;;
+    esac
+    case "$device_admin" in
+      ""|null|cmd:\ Failure*) warn "Device-admin status is unavailable in this Termux session." ;;
+      *) warn "Device-admin entry reported: $device_admin" ;;
+    esac
   else
     warn "Android secure settings are not accessible; review Accessibility and Device admin manually."
   fi
@@ -473,8 +479,8 @@ url_blocked() {
 
 setup() {
   need_cmd pkg || { fail "This command is for Termux. Install Termux from F-Droid or GitHub releases."; return 1; }
-  info "Installing recommended packages: curl, inetutils, dnsutils, iproute2, android-tools, clamav, ffmpeg, imagemagick, termux-api"
-  pkg update -y && pkg install -y curl inetutils dnsutils iproute2 android-tools clamav ffmpeg imagemagick termux-api && ok "Termux packages installed."
+  info "Installing recommended packages: curl, inetutils, dnsutils, iproute2, android-tools, clamav, openssl, ffmpeg, imagemagick, termux-api"
+  pkg update -y && pkg install -y curl inetutils dnsutils iproute2 android-tools clamav openssl ffmpeg imagemagick termux-api && ok "Termux packages installed."
 }
 
 adb_devices() {
@@ -543,9 +549,9 @@ main() {
     scan) case "${2:-files}" in files) scan_files "${3:-$HOME/storage/downloads}" ;; quarantine|auto-quarantine) scan_files --quarantine "${3:-$HOME/storage/downloads}" ;; *) usage; exit 1 ;; esac ;;
     backup) case "${2:-create}" in create) backup_create "${3:-$HOME/codex1-backup-$(date +%Y%m%d-%H%M%S).tar.gz}" ;; list) [ "$#" -ge 3 ] && backup_list "$3" || { fail "Usage: codex1 backup list <file>"; exit 1; } ;; restore) [ "$#" -ge 3 ] && backup_restore "$3" "${4:-$HOME/storage/shared}" || { fail "Usage: codex1 backup restore <file> [target]"; exit 1; } ;; *) usage; exit 1 ;; esac ;;
     caller) [ "${2:-}" = "country" ] && [ "$#" -ge 3 ] && caller_country "$3" || { fail "Usage: codex1 caller country <number>"; exit 1; } ;;
-    voice) case "${2:-effects}" in effects) voice_effects ;; apply) [ "$#" -ge 5 ] && voice_apply "$3" "$4" "$5" || { fail "Usage: codex1 voice apply <effect> <input> <output>"; exit 1; } ;; *) usage; exit 1 ;; esac ;;
-    camera) case "${2:-capture}" in capture) [ "$#" -ge 3 ] && camera_capture "$3" || { fail "Usage: codex1 camera capture <file>"; exit 1; } ;; watermark) [ "$#" -ge 4 ] && camera_watermark "$3" "$4" || { fail "Usage: codex1 camera watermark <input> <output>"; exit 1; } ;; zoom) [ "$#" -ge 5 ] && camera_zoom "$3" "$4" "$5" || { fail "Usage: codex1 camera zoom <input> <output> <100-800>"; exit 1; } ;; *) usage; exit 1 ;; esac ;;
-    vault) case "${2:-create}" in create) [ "$#" -ge 4 ] && vault_create "$3" "$4" || { fail "Usage: codex1 vault create <directory> <encrypted-file>"; exit 1; } ;; restore) [ "$#" -ge 4 ] && vault_restore "$3" "$4" || { fail "Usage: codex1 vault restore <encrypted-file> <directory>"; exit 1; } ;; encrypt) [ "$#" -ge 4 ] && vault_encrypt "$3" "$4" || { fail "Usage: codex1 vault encrypt <input> <output>"; exit 1; } ;; decrypt) [ "$#" -ge 4 ] && vault_decrypt "$3" "$4" || { fail "Usage: codex1 vault decrypt <input> <output>"; exit 1; } ;; *) usage; exit 1 ;; esac ;;
+    voice) case "${2:-effects}" in effects) voice_effects ;; apply) if [ "$#" -ge 5 ]; then voice_apply "$3" "$4" "$5"; else fail "Usage: codex1 voice apply <effect> <input> <output>"; exit 1; fi ;; *) usage; exit 1 ;; esac ;;
+    camera) case "${2:-capture}" in capture) if [ "$#" -ge 3 ]; then camera_capture "$3"; else fail "Usage: codex1 camera capture <file>"; exit 1; fi ;; watermark) if [ "$#" -ge 4 ]; then camera_watermark "$3" "$4"; else fail "Usage: codex1 camera watermark <input> <output>"; exit 1; fi ;; zoom) if [ "$#" -ge 5 ]; then camera_zoom "$3" "$4" "$5"; else fail "Usage: codex1 camera zoom <input> <output> <100-800>"; exit 1; fi ;; *) usage; exit 1 ;; esac ;;
+    vault) case "${2:-create}" in create) if [ "$#" -ge 4 ]; then vault_create "$3" "$4"; else fail "Usage: codex1 vault create <directory> <encrypted-file>"; exit 1; fi ;; restore) if [ "$#" -ge 4 ]; then vault_restore "$3" "$4"; else fail "Usage: codex1 vault restore <encrypted-file> <directory>"; exit 1; fi ;; encrypt) if [ "$#" -ge 4 ]; then vault_encrypt "$3" "$4"; else fail "Usage: codex1 vault encrypt <input> <output>"; exit 1; fi ;; decrypt) if [ "$#" -ge 4 ]; then vault_decrypt "$3" "$4"; else fail "Usage: codex1 vault decrypt <input> <output>"; exit 1; fi ;; *) usage; exit 1 ;; esac ;;
     url) case "${2:-check}" in check) [ "$#" -ge 3 ] && url_check "$3" || { fail "Usage: codex1 url check <url>"; exit 1; } ;; clean) [ "$#" -ge 3 ] && url_clean "$3" || { fail "Usage: codex1 url clean <url>"; exit 1; } ;; block) [ "$#" -ge 3 ] && url_block "$3" || { fail "Usage: codex1 url block <url>"; exit 1; } ;; blocked) url_blocked ;; *) usage; exit 1 ;; esac ;;
     setup) setup ;;
     adb) case "${2:-devices}" in devices) adb_devices ;; info) adb_info ;; *) usage; exit 1 ;; esac ;;
