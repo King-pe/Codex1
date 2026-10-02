@@ -52,6 +52,9 @@ Commands:
   caller country <number>      Detect country from a phone number prefix
   voice effects                Show offline audio effects
   voice apply <effect> <in> <out>  Apply an effect to an audio file
+  camera capture <file>        Capture a photo with Termux:API
+  camera watermark <in> <out> Add a Codex1 watermark to an image
+  camera zoom <in> <out> <%>   Digital zoom/crop an image (100-800)
   setup                        Install recommended Termux packages
   adb devices                  List authorized Android devices over ADB
   adb info                     Read basic device information (read-only)
@@ -69,6 +72,9 @@ Examples:
   codex1 backup create ~/codex1-backup.tar.gz
   codex1 caller country +255712345678
   codex1 voice apply robot input.wav output.wav
+  codex1 camera capture ~/storage/pictures/codex1.jpg
+  codex1 camera watermark input.jpg output.jpg
+  codex1 camera zoom input.jpg output.jpg 300
   codex1 flash verify ~/storage/downloads/firmware.zip
 
 Notes:
@@ -291,10 +297,39 @@ voice_apply() {
   ffmpeg -hide_banner -loglevel error -y -i "$input" -af "$filter" "$output" && ok "Created offline voice-effect file: $output"
 }
 
+image_tool() {
+  if need_cmd magick; then printf '%s' "magick"; elif need_cmd convert; then printf '%s' "convert"; else return 1; fi
+}
+
+camera_capture() {
+  local output="$1"
+  need_cmd termux-camera-photo || { fail "Termux:API is required. Install the Termux:API app and run: pkg install termux-api"; return 1; }
+  mkdir -p "$(dirname "$output")"
+  termux-camera-photo "$output" && ok "Photo captured: $output"
+}
+
+camera_watermark() {
+  local input="$1" output="$2" tool
+  [ -f "$input" ] || { fail "Input image not found: $input"; return 1; }
+  tool="$(image_tool)" || { fail "ImageMagick is not installed. Run: pkg install imagemagick"; return 1; }
+  "$tool" "$input" -gravity southeast -fill 'rgba(255,255,255,0.78)' -stroke 'rgba(0,0,0,0.45)' -strokewidth 2 -pointsize 42 -annotate +28+25 'Codex1' "$output" && ok "Codex1 watermark added: $output"
+}
+
+camera_zoom() {
+  local input="$1" output="$2" percent="$3" crop tool
+  [ -f "$input" ] || { fail "Input image not found: $input"; return 1; }
+  case "$percent" in ''|*[!0-9]*) fail "Zoom must be a whole number from 100 to 800."; return 1 ;; esac
+  [ "$percent" -ge 100 ] && [ "$percent" -le 800 ] || { fail "Zoom must be between 100 and 800 percent."; return 1; }
+  tool="$(image_tool)" || { fail "ImageMagick is not installed. Run: pkg install imagemagick"; return 1; }
+  crop=$((10000 / percent))
+  "$tool" "$input" -gravity center -crop "${crop}%" +repage "$output" && ok "Digital zoom ${percent}% created: $output"
+  warn "This is digital zoom: it crops pixels and cannot create detail that the camera did not capture."
+}
+
 setup() {
   need_cmd pkg || { fail "This command is for Termux. Install Termux from F-Droid or GitHub releases."; return 1; }
-  info "Installing recommended packages: curl, inetutils, dnsutils, android-tools, clamav, ffmpeg"
-  pkg update -y && pkg install -y curl inetutils dnsutils android-tools clamav ffmpeg && ok "Termux packages installed."
+  info "Installing recommended packages: curl, inetutils, dnsutils, android-tools, clamav, ffmpeg, imagemagick, termux-api"
+  pkg update -y && pkg install -y curl inetutils dnsutils android-tools clamav ffmpeg imagemagick termux-api && ok "Termux packages installed."
 }
 
 adb_devices() {
@@ -364,6 +399,7 @@ main() {
     backup) case "${2:-create}" in create) backup_create "${3:-$HOME/codex1-backup-$(date +%Y%m%d-%H%M%S).tar.gz}" ;; list) [ "$#" -ge 3 ] && backup_list "$3" || { fail "Usage: codex1 backup list <file>"; exit 1; } ;; restore) [ "$#" -ge 3 ] && backup_restore "$3" "${4:-$HOME/storage/shared}" || { fail "Usage: codex1 backup restore <file> [target]"; exit 1; } ;; *) usage; exit 1 ;; esac ;;
     caller) [ "${2:-}" = "country" ] && [ "$#" -ge 3 ] && caller_country "$3" || { fail "Usage: codex1 caller country <number>"; exit 1; } ;;
     voice) case "${2:-effects}" in effects) voice_effects ;; apply) [ "$#" -ge 5 ] && voice_apply "$3" "$4" "$5" || { fail "Usage: codex1 voice apply <effect> <input> <output>"; exit 1; } ;; *) usage; exit 1 ;; esac ;;
+    camera) case "${2:-capture}" in capture) [ "$#" -ge 3 ] && camera_capture "$3" || { fail "Usage: codex1 camera capture <file>"; exit 1; } ;; watermark) [ "$#" -ge 4 ] && camera_watermark "$3" "$4" || { fail "Usage: codex1 camera watermark <input> <output>"; exit 1; } ;; zoom) [ "$#" -ge 5 ] && camera_zoom "$3" "$4" "$5" || { fail "Usage: codex1 camera zoom <input> <output> <100-800>"; exit 1; } ;; *) usage; exit 1 ;; esac ;;
     setup) setup ;;
     adb) case "${2:-devices}" in devices) adb_devices ;; info) adb_info ;; *) usage; exit 1 ;; esac ;;
     flash) case "${2:-guide}" in guide) flash_guide ;; verify) [ "$#" -ge 3 ] && flash_verify "$3" || { fail "Usage: codex1 flash verify <file>"; exit 1; } ;; *) usage; exit 1 ;; esac ;;

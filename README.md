@@ -15,6 +15,7 @@ It provides a clear interface for:
 - Compressed backup and confirmation-based restore for files accessible to Termux
 - Offline country lookup from a caller's international dialing prefix
 - Offline voice effects for audio files
+- Termux camera capture, Codex1 watermarking, and digital zoom/crop for images
 
 ## Install in Termux
 
@@ -50,6 +51,9 @@ codex1 backup restore ~/codex1-backup.tar.gz
 codex1 caller country +255712345678
 codex1 voice effects
 codex1 voice apply robot input.wav output.wav
+codex1 camera capture ~/storage/pictures/codex1.jpg
+codex1 camera watermark input.jpg output.jpg
+codex1 camera zoom input.jpg output.jpg 300
 codex1 setup
 codex1 adb devices
 codex1 adb info
@@ -72,6 +76,10 @@ Run `termux-setup-storage` once, then use `codex1 backup create [file]` to archi
 ### Caller country and voice effects
 
 `codex1 caller country +255712345678` identifies a country from an international prefix using an offline list. It cannot prove caller identity or prevent caller-ID spoofing. `codex1 voice apply robot input.wav output.wav` applies an offline effect to an audio file after `pkg install ffmpeg`; effects are `deep`, `high`, and `robot`. This is **not** a live phone-call voice changer and does not spoof calls or impersonate another person.
+
+### Camera effects
+
+Install the Termux:API app and package, then capture a photo with `codex1 camera capture <file>`. `codex1 camera watermark <input> <output>` adds a visible **Codex1** watermark. `codex1 camera zoom <input> <output> <100-800>` creates a centered digital crop. A 300% or 800% zoom is not optical zoom: it enlarges/crops existing pixels and cannot create detail that the camera did not capture. The camera tools process files locally and do not upload them.
 
 ## Safety scope
 
