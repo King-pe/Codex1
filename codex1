@@ -1,0 +1,205 @@
+#!/data/data/com.termux/files/usr/bin/bash
+# Codex1 — Termux device care toolkit
+# Developer: mrcode Technologi | Facebook: @mrcodex1
+set -u
+
+VERSION="1.0.0"
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; DIM='\033[2m'; RESET='\033[0m'
+
+say() { printf "%b\n" "$*"; }
+info() { say "${CYAN}[*]${RESET} $*"; }
+ok() { say "${GREEN}[+]${RESET} $*"; }
+warn() { say "${YELLOW}[!]${RESET} $*"; }
+fail() { say "${RED}[x]${RESET} $*"; }
+need_cmd() { command -v "$1" >/dev/null 2>&1; }
+
+banner() {
+  say "${CYAN}   ____          _            __${RESET}"
+  say "${CYAN}  / ___|___   __| | _____  __ \ \${RESET}"
+  say "${CYAN} | |   / _ \ / _\` |/ _ \ \/ /  | |${RESET}"
+  say "${CYAN} | |__| (_) | (_| |  __/>  <   | |${RESET}"
+  say "${CYAN}  \____\___/ \__,_|\___/_/\_\  | |${RESET}"
+  say "${CYAN}                                /_/${RESET}"
+  say "${DIM}Codex1 v${VERSION} · Termux device care toolkit${RESET}"
+  say "${DIM}by mrcode Technologi · Facebook: @mrcodex1${RESET}"
+}
+
+usage() {
+  cat <<'EOF'
+
+Usage: codex1 <command> [options]
+
+Commands:
+  help                         Show this help
+  version                      Show version and developer
+  status                       Check Termux tools and Android access
+  screen info                  Show current screen size and density
+  screen scale <percent>       Preview/apply a density scale (80-140)
+  screen reset                 Reset Android display density
+  network check                Check internet, DNS, latency and Wi-Fi info
+  network repair               Open safe Android network settings
+  setup                        Install recommended Termux packages
+  adb devices                  List authorized Android devices over ADB
+  adb info                     Read basic device information (read-only)
+  flash guide                  Show the official firmware maintenance workflow
+  flash verify <file>          Print file size and SHA-256 before flashing
+
+Examples:
+  codex1 status
+  codex1 screen info
+  codex1 screen scale 110
+  codex1 network check
+  codex1 flash verify ~/storage/downloads/firmware.zip
+
+Notes:
+  - Screen density changes usually require ADB, root, or Shizuku permissions.
+  - Use only on a phone you own or are authorized to repair.
+  - Codex1 does not bypass PIN, FRP, carrier locks, accounts, or security.
+EOF
+}
+
+screen_info() {
+  if ! need_cmd wm; then
+    fail "The Android 'wm' command is not available in this Termux session."
+    say "Install/use ADB, root, or Shizuku permissions, then try again."
+    return 1
+  fi
+  say "${CYAN}Screen information${RESET}"
+  wm size 2>&1 || true
+  wm density 2>&1 || true
+  if need_cmd settings; then
+    say "Font scale: $(settings get system font_scale 2>/dev/null || echo 'unavailable')"
+  fi
+}
+
+current_density() {
+  local raw density
+  raw="$(wm density 2>/dev/null || true)"
+  density="$(printf '%s\n' "$raw" | sed -nE 's/.*Override density: ([0-9]+).*/\1/p' | head -n1)"
+  [ -n "$density" ] || density="$(printf '%s\n' "$raw" | sed -nE 's/.*Physical density: ([0-9]+).*/\1/p' | head -n1)"
+  printf '%s' "${density:-0}"
+}
+
+screen_scale() {
+  local percent="$1" base target
+  case "$percent" in ''|*[!0-9]*) fail "Scale must be a whole number from 80 to 140."; return 1 ;; esac
+  if [ "$percent" -lt 80 ] || [ "$percent" -gt 140 ]; then fail "Scale must be between 80 and 140 percent."; return 1; fi
+  need_cmd wm || { fail "Android 'wm' is unavailable. Use ADB/root/Shizuku permissions."; return 1; }
+  base="$(current_density)"
+  [ "$base" -gt 0 ] || { fail "Could not read the current density."; return 1; }
+  target=$((base * 100 / percent))
+  warn "This changes Android display density to ${target} dpi (${percent}% content scale)."
+  say "To undo: codex1 screen reset"
+  wm density "$target" 2>&1 && ok "Display density updated." || { fail "Permission denied. Try ADB, root, or Shizuku."; return 1; }
+}
+
+screen_reset() {
+  need_cmd wm || { fail "Android 'wm' is unavailable."; return 1; }
+  wm density reset 2>&1 && ok "Display density reset to the device default." || { fail "Permission denied. Try ADB, root, or Shizuku."; return 1; }
+}
+
+network_check() {
+  say "${CYAN}Network diagnostics${RESET}"
+  if need_cmd ping; then
+    ping -c 1 -W 3 1.1.1.1 >/dev/null 2>&1 && ok "Internet reachability: OK (1.1.1.1)" || warn "Internet reachability: failed"
+  else warn "ping is missing; run: pkg install inetutils"; fi
+  if need_cmd getent; then
+    getent hosts example.com >/dev/null 2>&1 && ok "DNS resolution: OK (example.com)" || warn "DNS resolution: failed"
+  else warn "getent is missing; run: pkg install dnsutils"; fi
+  if need_cmd curl; then
+    local timing; timing="$(curl -L -o /dev/null -sS --max-time 6 -w '%{http_code} %{time_total}s' https://example.com 2>/dev/null || true)"
+    [ -n "$timing" ] && ok "HTTPS request: $timing" || warn "HTTPS request: failed"
+  fi
+  if need_cmd termux-wifi-connectioninfo; then
+    say "Wi-Fi info:"; termux-wifi-connectioninfo 2>/dev/null | sed -n '1,14p'
+  else warn "Wi-Fi info unavailable; install Termux:API and run: pkg install termux-api"; fi
+}
+
+network_repair() {
+  warn "Codex1 will not silently change APN, proxy, or private DNS settings."
+  if need_cmd termux-wifi-enable; then
+    termux-wifi-enable true >/dev/null 2>&1 || true
+    ok "Wi-Fi enable request sent."
+  fi
+  if need_cmd termux-open-settings; then
+    termux-open-settings android.settings.WIRELESS_SETTINGS >/dev/null 2>&1 || termux-open-settings >/dev/null 2>&1 || true
+    ok "Opened Android network settings. Try airplane mode, forget/reconnect Wi-Fi, then restart the router."
+  else
+    say "Open Android Settings → Network & internet, then try airplane mode and reconnect Wi-Fi."
+  fi
+}
+
+setup() {
+  need_cmd pkg || { fail "This command is for Termux. Install Termux from F-Droid or GitHub releases."; return 1; }
+  info "Installing recommended packages: curl, inetutils, dnsutils, android-tools"
+  pkg update -y && pkg install -y curl inetutils dnsutils android-tools && ok "Termux packages installed."
+}
+
+adb_devices() {
+  need_cmd adb || { fail "ADB is not installed. Run: codex1 setup"; return 1; }
+  adb start-server >/dev/null 2>&1 || true
+  adb devices
+}
+
+adb_info() {
+  need_cmd adb || { fail "ADB is not installed. Run: codex1 setup"; return 1; }
+  local device; device="$(adb devices | awk 'NR==2 && $2=="device" {print $1}')"
+  [ -n "$device" ] || { warn "No authorized ADB device found. Enable USB debugging on your own device."; return 1; }
+  say "${CYAN}Read-only device information${RESET}"
+  for prop in ro.product.manufacturer ro.product.model ro.build.version.release ro.build.version.security_patch; do
+    printf '%-24s %s\n' "$prop" "$(adb -s "$device" shell getprop "$prop" 2>/dev/null | tr -d '\r')"
+  done
+}
+
+flash_guide() {
+  cat <<'EOF'
+
+Official firmware maintenance workflow
+
+1. Confirm the exact model, region/CSC, bootloader state, and battery level.
+2. Back up photos, contacts, chats, and any 2FA recovery codes.
+3. Download firmware only from the phone manufacturer or an authorized service source.
+4. Verify the SHA-256 checksum with: codex1 flash verify <file>
+5. Read the manufacturer's service instructions for that exact model.
+6. Use the manufacturer's official recovery/flashing utility. Do not disconnect during a flash.
+7. Allow the device to boot fully, then restore your backup.
+
+Codex1 intentionally does not bypass screen locks, FRP, carrier locks, Google/Samsung accounts,
+bootloader authorization, or other access controls. If a phone is locked, use the owner's account
+recovery or an authorized service center.
+EOF
+}
+
+flash_verify() {
+  local file="$1"
+  [ -f "$file" ] || { fail "File not found: $file"; return 1; }
+  say "${CYAN}Firmware file verification${RESET}"
+  printf 'File: %s\n' "$file"
+  printf 'Size: '; du -h "$file" | awk '{print $1}'
+  if need_cmd sha256sum; then sha256sum "$file"; elif need_cmd shasum; then shasum -a 256 "$file"; else warn "Install coreutils to calculate SHA-256."; fi
+  warn "Compare this hash with the manufacturer's published checksum before using the file."
+}
+
+status() {
+  say "${CYAN}Codex1 status${RESET}"
+  printf '%-18s %s\n' "Termux" "${PREFIX:-unknown}"
+  printf '%-18s %s\n' "Android wm" "$(need_cmd wm && echo available || echo unavailable)"
+  printf '%-18s %s\n' "ADB" "$(need_cmd adb && echo installed || echo not-installed)"
+  printf '%-18s %s\n' "curl" "$(need_cmd curl && echo installed || echo not-installed)"
+  printf '%-18s %s\n' "Wi-Fi API" "$(need_cmd termux-wifi-connectioninfo && echo available || echo optional)"
+}
+
+main() {
+  case "${1:-help}" in
+    help|-h|--help) banner; usage ;;
+    version|-v|--version) say "Codex1 ${VERSION} · by mrcode Technologi · Facebook: @mrcodex1" ;;
+    status) status ;;
+    screen) case "${2:-info}" in info) screen_info ;; scale) [ "$#" -ge 3 ] && screen_scale "$3" || { fail "Usage: codex1 screen scale <80-140>"; exit 1; } ;; reset) screen_reset ;; *) usage; exit 1 ;; esac ;;
+    network) case "${2:-check}" in check) network_check ;; repair) network_repair ;; *) usage; exit 1 ;; esac ;;
+    setup) setup ;;
+    adb) case "${2:-devices}" in devices) adb_devices ;; info) adb_info ;; *) usage; exit 1 ;; esac ;;
+    flash) case "${2:-guide}" in guide) flash_guide ;; verify) [ "$#" -ge 3 ] && flash_verify "$3" || { fail "Usage: codex1 flash verify <file>"; exit 1; } ;; *) usage; exit 1 ;; esac ;;
+    *) fail "Unknown command: $1"; usage; exit 1 ;;
+  esac
+}
+main "$@"
