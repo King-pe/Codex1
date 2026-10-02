@@ -1,6 +1,6 @@
 # Codex1
 
-**Codex1** is an English, local-first **Termux CLI device care toolkit** by **mrcode Technologi**. A lightweight web dashboard is included as a visual companion.
+**Codex1** is an English, local-first **Termux CLI device care toolkit** by **MrCodex1Tz**. A lightweight web dashboard is included as a visual companion.
 
 It provides a clear interface for:
 
@@ -66,8 +66,8 @@ Then open <http://localhost:4173>.
 
 ## Developer
 
-- **mrcode Technologi**
-- Facebook: [@mrcodex1](https://www.facebook.com/mrcodex1)
+- **MrCodex1Tz**
+- Facebook: [MrCodex1Tz](https://www.facebook.com/MrCodex1Tz)
 
 ## License
 

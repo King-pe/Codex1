@@ -1,6 +1,6 @@
 #!/data/data/com.termux/files/usr/bin/bash
 # Codex1 — Termux device care toolkit
-# Developer: mrcode Technologi | Facebook: @mrcodex1
+# Developer: MrCodex1Tz | Facebook: MrCodex1Tz
 set -u
 
 VERSION="1.0.0"
@@ -14,14 +14,17 @@ fail() { say "${RED}[x]${RESET} $*"; }
 need_cmd() { command -v "$1" >/dev/null 2>&1; }
 
 banner() {
-  say "${CYAN}   ____          _            __${RESET}"
-  say "${CYAN}  / ___|___   __| | _____  __ \ \${RESET}"
-  say "${CYAN} | |   / _ \ / _\` |/ _ \ \/ /  | |${RESET}"
-  say "${CYAN} | |__| (_) | (_| |  __/>  <   | |${RESET}"
-  say "${CYAN}  \____\___/ \__,_|\___/_/\_\  | |${RESET}"
-  say "${CYAN}                                /_/${RESET}"
+  say "${CYAN}"
+  cat <<'EOF'
+ ______     ______     _____     ______     __  __
+/\  ___\   /\  __ \   /\  __-.  /\  ___\   /\_\_\_\
+\ \ \____  \ \ \/\ \  \ \ \/\ \ \ \  _*\   \/*/\_/__
+ \ \_____\  \ \_____\  \ \_*__-  \ \___*_\   /\_\/\_\
+  \/____/   \/____*/   \/_*__/   \/__*_*/   \/*/\/_/
+EOF
+  say "${RESET}"
   say "${DIM}Codex1 v${VERSION} · Termux device care toolkit${RESET}"
-  say "${DIM}by mrcode Technologi · Facebook: @mrcodex1${RESET}"
+  say "${DIM}by MrCodex1Tz · Facebook: MrCodex1Tz${RESET}"
 }
 
 usage() {
@@ -192,7 +195,7 @@ status() {
 main() {
   case "${1:-help}" in
     help|-h|--help) banner; usage ;;
-    version|-v|--version) say "Codex1 ${VERSION} · by mrcode Technologi · Facebook: @mrcodex1" ;;
+    version|-v|--version) say "Codex1 ${VERSION} · by MrCodex1Tz · Facebook: MrCodex1Tz" ;;
     status) status ;;
     screen) case "${2:-info}" in info) screen_info ;; scale) [ "$#" -ge 3 ] && screen_scale "$3" || { fail "Usage: codex1 screen scale <80-140>"; exit 1; } ;; reset) screen_reset ;; *) usage; exit 1 ;; esac ;;
     network) case "${2:-check}" in check) network_check ;; repair) network_repair ;; *) usage; exit 1 ;; esac ;;
