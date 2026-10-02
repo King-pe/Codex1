@@ -12,6 +12,9 @@ It provides a clear interface for:
 - Official Android update checks and a shortcut to Android's system-update settings
 - Termux-accessible file scanning with ClamAV and reversible quarantine
 - Security audit reminders for USB debugging, Play Protect, unknown sources, updates, and account safety
+- Compressed backup and confirmation-based restore for files accessible to Termux
+- Offline country lookup from a caller's international dialing prefix
+- Offline voice effects for audio files
 
 ## Install in Termux
 
@@ -41,6 +44,12 @@ codex1 update settings
 codex1 security audit
 codex1 scan files ~/storage/downloads
 codex1 scan quarantine ~/storage/downloads
+codex1 backup create ~/codex1-backup.tar.gz
+codex1 backup list ~/codex1-backup.tar.gz
+codex1 backup restore ~/codex1-backup.tar.gz
+codex1 caller country +255712345678
+codex1 voice effects
+codex1 voice apply robot input.wav output.wav
 codex1 setup
 codex1 adb devices
 codex1 adb info
@@ -55,6 +64,14 @@ The screen density commands may require ADB, root, or Shizuku permission. `netwo
 `codex1 update check` reads the phone model, Android version, build, and security-patch date. `codex1 update settings` opens the official Android update screen. Android system updates are intentionally installed by Android's own updater, not force-flashed by Termux: firmware packages are model/region-specific and a wrong image can brick or wipe a phone.
 
 `codex1 scan files <directory>` scans files visible to Termux and reports detections without changing anything. `codex1 scan quarantine <directory>` moves detected files to `~/.codex1/quarantine` instead of deleting them. This cannot scan protected Android app data or replace Play Protect. Keep Play Protect enabled, install apps only from trusted sources, use a strong screen lock and 2FA, review Google account devices, and disable USB debugging when not needed.
+
+### Backup and restore
+
+Run `termux-setup-storage` once, then use `codex1 backup create [file]` to archive common shared-storage folders such as DCIM, Downloads, Pictures, Movies, Music, and Documents. Use `codex1 backup list <file>` to inspect an archive and `codex1 backup restore <file>` to restore it after typing `RESTORE`. Backups do not include protected app data, passwords, banking data, SMS, or contacts unless those are separately exported using an official app flow.
+
+### Caller country and voice effects
+
+`codex1 caller country +255712345678` identifies a country from an international prefix using an offline list. It cannot prove caller identity or prevent caller-ID spoofing. `codex1 voice apply robot input.wav output.wav` applies an offline effect to an audio file after `pkg install ffmpeg`; effects are `deep`, `high`, and `robot`. This is **not** a live phone-call voice changer and does not spoof calls or impersonate another person.
 
 ## Safety scope
 

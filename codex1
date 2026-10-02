@@ -46,6 +46,12 @@ Commands:
   security audit               Check ADB, app sources, screen lock and updates
   scan files [path]            Scan accessible files with ClamAV (report only)
   scan quarantine [path]       Move detected files to a reversible quarantine
+  backup create [file]         Back up accessible phone files to a compressed archive
+  backup list <file>           List files inside a Codex1 backup
+  backup restore <file>        Restore a backup after confirmation
+  caller country <number>      Detect country from a phone number prefix
+  voice effects                Show offline audio effects
+  voice apply <effect> <in> <out>  Apply an effect to an audio file
   setup                        Install recommended Termux packages
   adb devices                  List authorized Android devices over ADB
   adb info                     Read basic device information (read-only)
@@ -60,6 +66,9 @@ Examples:
   codex1 update check
   codex1 security audit
   codex1 scan files ~/storage/downloads
+  codex1 backup create ~/codex1-backup.tar.gz
+  codex1 caller country +255712345678
+  codex1 voice apply robot input.wav output.wav
   codex1 flash verify ~/storage/downloads/firmware.zip
 
 Notes:
@@ -203,10 +212,89 @@ scan_files() {
   fi
 }
 
+backup_create() {
+  local output="${1:-$HOME/codex1-backup-$(date +%Y%m%d-%H%M%S).tar.gz}" shared="$HOME/storage/shared"
+  [ -d "$shared" ] || { fail "Shared storage is not available. Run: termux-setup-storage"; return 1; }
+  local dirs=() dir
+  for dir in DCIM Download Downloads Pictures Movies Music Documents; do
+    [ -e "$shared/$dir" ] && dirs+=("$dir")
+  done
+  [ "${#dirs[@]}" -gt 0 ] || { fail "No supported phone folders were found in shared storage."; return 1; }
+  mkdir -p "$(dirname "$output")"
+  info "Creating a backup of accessible folders: ${dirs[*]}"
+  tar -czf "$output" -C "$shared" --ignore-failed-read "${dirs[@]}" && {
+    ok "Backup created: $output"
+    say "Size: $(du -h "$output" | awk '{print $1}')"
+    say "This backup does not include protected app data, passwords, or banking data."
+  }
+}
+
+backup_list() {
+  local archive="$1"
+  [ -f "$archive" ] || { fail "Backup file not found: $archive"; return 1; }
+  tar -tzf "$archive" | sed -n '1,120p'
+}
+
+backup_restore() {
+  local archive="$1" target="${2:-$HOME/storage/shared}"
+  [ -f "$archive" ] || { fail "Backup file not found: $archive"; return 1; }
+  [ -d "$target" ] || { fail "Restore target not found: $target"; return 1; }
+  if tar -tzf "$archive" | grep -E '(^/|(^|/)\.\.(\/|$))' >/dev/null 2>&1; then
+    fail "Backup contains an unsafe path and was not restored."; return 1
+  fi
+  warn "Files in the backup may overwrite files with the same names in: $target"
+  printf 'Type RESTORE to continue: '
+  read -r confirmation
+  [ "$confirmation" = "RESTORE" ] || { warn "Restore cancelled."; return 0; }
+  tar -xzf "$archive" -C "$target" && ok "Backup restored to: $target"
+}
+
+caller_country() {
+  local number="${1:-}" normalized
+  normalized="$(printf '%s' "$number" | tr -cd '0-9+')"
+  [ -n "$normalized" ] || { fail "Usage: codex1 caller country +255712345678"; return 1; }
+  case "$normalized" in
+    +255*|00255*) say "Country: Tanzania (+255)" ;;
+    +254*|00254*) say "Country: Kenya (+254)" ;;
+    +256*|00256*) say "Country: Uganda (+256)" ;;
+    +250*|00250*) say "Country: Rwanda (+250)" ;;
+    +257*|00257*) say "Country: Burundi (+257)" ;;
+    +1*) say "Country: United States/Canada (+1) — exact country may need a full numbering database" ;;
+    +44*|0044*) say "Country: United Kingdom (+44)" ;;
+    +91*|0091*) say "Country: India (+91)" ;;
+    +27*|0027*) say "Country: South Africa (+27)" ;;
+    +971*|00971*) say "Country: United Arab Emirates (+971)" ;;
+    *) warn "Country code not in the offline list. Use the complete number with +country-code."; return 1 ;;
+  esac
+  warn "A country code is not proof of caller identity. Never share OTPs, passwords, or personal data with unknown callers."
+}
+
+voice_effects() {
+  say "Offline audio effects (not live phone-call voice spoofing):"
+  say "  deep      Lower pitch"
+  say "  high      Raise pitch"
+  say "  robot     Mechanical/robotic effect"
+  say "Example: codex1 voice apply robot input.wav output.wav"
+  say "Install the audio engine with: pkg install ffmpeg"
+}
+
+voice_apply() {
+  local effect="$1" input="$2" output="$3" filter
+  [ -f "$input" ] || { fail "Input audio file not found: $input"; return 1; }
+  need_cmd ffmpeg || { fail "FFmpeg is not installed. Run: pkg install ffmpeg"; return 1; }
+  case "$effect" in
+    deep) filter="asetrate=44100*0.78,aresample=44100,atempo=1.282" ;;
+    high) filter="asetrate=44100*1.22,aresample=44100,atempo=0.819" ;;
+    robot) filter="asetrate=44100*0.82,aresample=44100,atempo=1.22,chorus=0.6:0.9:50:0.4:0.25:2" ;;
+    *) fail "Unknown effect: $effect. Use: deep, high, or robot"; return 1 ;;
+  esac
+  ffmpeg -hide_banner -loglevel error -y -i "$input" -af "$filter" "$output" && ok "Created offline voice-effect file: $output"
+}
+
 setup() {
   need_cmd pkg || { fail "This command is for Termux. Install Termux from F-Droid or GitHub releases."; return 1; }
-  info "Installing recommended packages: curl, inetutils, dnsutils, android-tools, clamav"
-  pkg update -y && pkg install -y curl inetutils dnsutils android-tools clamav && ok "Termux packages installed."
+  info "Installing recommended packages: curl, inetutils, dnsutils, android-tools, clamav, ffmpeg"
+  pkg update -y && pkg install -y curl inetutils dnsutils android-tools clamav ffmpeg && ok "Termux packages installed."
 }
 
 adb_devices() {
@@ -273,6 +361,9 @@ main() {
     update) case "${2:-check}" in check) update_check ;; settings) update_settings ;; *) usage; exit 1 ;; esac ;;
     security) case "${2:-audit}" in audit) security_audit ;; *) usage; exit 1 ;; esac ;;
     scan) case "${2:-files}" in files) scan_files "${3:-$HOME/storage/downloads}" ;; quarantine) scan_files --quarantine "${3:-$HOME/storage/downloads}" ;; *) usage; exit 1 ;; esac ;;
+    backup) case "${2:-create}" in create) backup_create "${3:-$HOME/codex1-backup-$(date +%Y%m%d-%H%M%S).tar.gz}" ;; list) [ "$#" -ge 3 ] && backup_list "$3" || { fail "Usage: codex1 backup list <file>"; exit 1; } ;; restore) [ "$#" -ge 3 ] && backup_restore "$3" "${4:-$HOME/storage/shared}" || { fail "Usage: codex1 backup restore <file> [target]"; exit 1; } ;; *) usage; exit 1 ;; esac ;;
+    caller) [ "${2:-}" = "country" ] && [ "$#" -ge 3 ] && caller_country "$3" || { fail "Usage: codex1 caller country <number>"; exit 1; } ;;
+    voice) case "${2:-effects}" in effects) voice_effects ;; apply) [ "$#" -ge 5 ] && voice_apply "$3" "$4" "$5" || { fail "Usage: codex1 voice apply <effect> <input> <output>"; exit 1; } ;; *) usage; exit 1 ;; esac ;;
     setup) setup ;;
     adb) case "${2:-devices}" in devices) adb_devices ;; info) adb_info ;; *) usage; exit 1 ;; esac ;;
     flash) case "${2:-guide}" in guide) flash_guide ;; verify) [ "$#" -ge 3 ] && flash_verify "$3" || { fail "Usage: codex1 flash verify <file>"; exit 1; } ;; *) usage; exit 1 ;; esac ;;
